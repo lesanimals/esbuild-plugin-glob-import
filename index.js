@@ -1,98 +1,90 @@
+import path from 'node:path';
+import glob from 'fast-glob';
 
-import path from 'node:path'
-import glob from 'fast-glob'
+const filter = /\*/;
+const namespace = 'plugin-glob-imports';
 
-const filter = /\*/
-const namespace = 'plugin-glob-imports'
+export default function globImport() {
 
-export default function (opts) {
-  opts ??= {}
-
-  opts.camelCase ??= true
-  opts.entryPoint ??= 'index.js'
-  opts.entryPointMatch ??= arr => arr[arr.length - 1] === opts.entryPoint
-
-  return {
-    name: namespace,
-    setup (build) {
-      build.onResolve({ filter }, resolve)
-      build.onLoad({ filter, namespace }, args => load(args, opts))
-    }
-  }
+	return {
+		name: namespace,
+		setup( build ) {
+			build.onResolve( { filter }, ( args ) => resolve( args, build ) );
+			build.onLoad( {
+				filter,
+				namespace,
+			}, args => load( args ) );
+		},
+	};
 }
 
-function camelCase (filename) {
-  return filename
-    .replace(/\.[^.]+$/, '') // removes extension
-    .replace(/[-_](\w)/g, (match, letter) => letter.toUpperCase())
+function resolve( args, build ) {
+	const cwd = process.cwd().endsWith( '/' ) ? process.cwd() : process.cwd() + '/';
+	const resolvePaths = [];
+	const files = [];
+	if ( build && build.initialOptions && build.initialOptions.nodePaths && build.initialOptions.nodePaths.length ) {
+		build.initialOptions.nodePaths.forEach( path => {
+			resolvePaths.push( cwd + path + args.path );
+		} );
+	} else {
+		resolvePaths.push( args.resolveDir );
+	}
+	resolvePaths.forEach( loadpath => {
+		const tmpFiles = glob.sync( loadpath );
+		if ( tmpFiles.length ) {
+			tmpFiles.forEach( tmpFile => {
+				files.push( path.relative( cwd, tmpFile ) );
+			} );
+		}
+	} );
+
+	return {
+		namespace,
+		path: args.path,
+		pluginData: {
+			resolveDir: cwd,
+			files: files,
+		},
+	};
 }
 
-function resolve (args) {
-  const resolvePaths = []
-  const loadpath = path.join(args.resolveDir, args.path)
+function load( args ) {
+	const pluginData = args.pluginData;
+	const paths = pluginData.files;
 
-  let files = glob.sync(loadpath)
-  files = files.length === 0 ? [loadpath] : files
+	const data = [];
+	const obj = {};
 
-  for (let i = 0; i < files.length; i++) {
-    resolvePaths.push(path.relative(args.resolveDir, files[i]))
-  }
+	for ( let i = 0; i < paths.length; i++ ) {
+		const filepath = paths[ i ];
+		const arr = filepath.split( '/' );
+		const name = '_module' + i;
 
-  return {
-    namespace,
-    path: args.path,
-    pluginData: {
-      resolveDir: args.resolveDir,
-      resolvePaths
-    }
-  }
-}
+		arr.shift();
 
-function load (args, opts) {
-  const pluginData = args.pluginData
-  const paths = pluginData.resolvePaths
+		let prev = obj;
 
-  const data = []
-  const obj = {}
+		for ( let i = 0; i < arr.length; i++ ) {
+			let key = arr[ i ];
 
-  for (let i = 0; i < paths.length; i++) {
-    const filepath = paths[i]
-    const arr = filepath.split('/')
-    const name = '_module' + i
+			if ( typeof prev === 'string' ) {
+				continue;
+			}
 
-    arr.shift()
+			if ( i === arr.length - 1 ) {
+				data.push( `import ${ prev[ key ] = name } from './${ filepath }'` );
+				continue;
+			}
 
-    if (opts.entryPointMatch?.(arr)) {
-      arr.pop()
-    }
+			prev = prev[ key ] ??= {};
+		}
+	}
 
-    let prev = obj
+	let output = JSON.stringify( obj );
+	output = output.replace( /"_module\d+"/g, match => match.slice( 1, -1 ) );
 
-    for (let i = 0; i < arr.length; i++) {
-      let key = arr[i]
-
-      if (typeof prev === 'string') {
-        continue
-      }
-
-      if (opts.camelCase) {
-        key = camelCase(key)
-      }
-
-      if (i === arr.length - 1) {
-        data.push(`import ${prev[key] = name} from './${filepath}'`)
-        continue
-      }
-
-      prev = prev[key] ??= {}
-    }
-  }
-
-  let output = JSON.stringify(obj)
-  output = output.replace(/"_module\d+"/g, match => match.slice(1, -1))
-
-  return {
-    resolveDir: pluginData.resolveDir,
-    contents: data.join('\n') + '\nexport default ' + output
-  }
+	return {
+		resolveDir: pluginData.resolveDir,
+		contents: data.join( '\n' ) + '\nexport default ' + output,
+	};
 }
