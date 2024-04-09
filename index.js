@@ -1,5 +1,5 @@
 import path from 'node:path';
-import glob from 'fast-glob';
+import { glob } from 'glob';
 
 const filter = /\*/;
 const namespace = 'plugin-glob-imports';
@@ -30,10 +30,10 @@ function resolve( args, build ) {
 		resolvePaths.push( args.resolveDir );
 	}
 	resolvePaths.forEach( loadpath => {
-		const tmpFiles = glob.sync( loadpath );
+		const tmpFiles = glob.sync( path.normalize( loadpath ) );
 		if ( tmpFiles.length ) {
 			tmpFiles.forEach( tmpFile => {
-				files.push( path.relative( cwd, tmpFile ) );
+				files.push( path.relative( cwd, tmpFile ).replaceAll( '\\', '/' ) );
 			} );
 		}
 	} );
