@@ -30,7 +30,9 @@ function resolve( args, build ) {
 		resolvePaths.push( args.resolveDir );
 	}
 	resolvePaths.forEach( loadpath => {
-		const tmpFiles = glob.sync( path.normalize( loadpath ) );
+		const tmpFiles = glob.sync(
+			path.normalize( loadpath ),
+			{ windowsPathsNoEscape: true } );
 		if ( tmpFiles.length ) {
 			tmpFiles.forEach( tmpFile => {
 				files.push( path.relative( cwd, tmpFile ).replaceAll( '\\', '/' ) );
